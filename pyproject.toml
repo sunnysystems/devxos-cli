@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "devxos"
+version = "0.1.0"
+description = "Engineering intelligence for the AI era — measure signal vs noise in software delivery"
+requires-python = ">=3.11"
+license = "MIT"
+
+[project.urls]
+Homepage = "https://devxos.ai"
+Repository = "https://github.com/sunnysystems/devxos-cli"
+
+[project.optional-dependencies]
+otel = [
+    "opentelemetry-api>=1.20",
+    "opentelemetry-sdk>=1.20",
+    "opentelemetry-exporter-otlp-proto-http>=1.20",
+]
+
+[project.scripts]
+devxos = "devxos.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["devxos*"]
+
+[tool.setuptools.package-data]
+"devxos.hooks" = ["*.sh"]

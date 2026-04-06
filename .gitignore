@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+out/
+*.json.bak
+.DS_Store
+
+# Platform
+platform/node_modules/
+platform/.next/
+platform/.env*.local
