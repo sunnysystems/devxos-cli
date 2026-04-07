@@ -491,17 +491,28 @@ def _run_single_repo(args: argparse.Namespace) -> None:
     # Step 6: Generate narrative
     narrative = generate_narrative(metrics, lang=args.lang, trend=trend)
 
+    # Check if we should auto-push (logged in and not --no-push)
+    from devxos.platform.config import get_auth
+    will_push = not args.no_push and get_auth() is not None
+
     # Step 7: Write output
+    # If pushing, write to a temp dir (don't pollute the repo)
+    import tempfile
+    if will_push:
+        tmp_out = tempfile.mkdtemp(prefix="devxos-")
+        actual_out_dir = ctx.out_dir
+        ctx = AnalysisContext(
+            repo_path=ctx.repo_path, repo_name=ctx.repo_name,
+            org_name=ctx.org_name, out_dir=tmp_out,
+            days=ctx.days, churn_days=ctx.churn_days, lang=ctx.lang,
+        )
+
     print(s["cli_writing_report"], end=" ", flush=True)
     report_path, metrics_path = write_output(
         ctx, metrics, narrative_sections=narrative, trend=trend,
         adoption=adoption, velocity=velocity, priming=priming,
     )
     print(s["cli_done"])
-
-    print()
-    print(f"{s['cli_label_report']:<14}: {report_path}")
-    print(f"{s['cli_label_metrics']:<14}: {metrics_path}")
 
     # Record telemetry
     record_duration("devxos.analysis.duration_seconds", analysis_start, {"repo": repo_name})
@@ -510,13 +521,17 @@ def _run_single_repo(args: argparse.Namespace) -> None:
     record_metric("devxos.metrics.churn_events", float(metrics.churn_events), {"repo": repo_name})
     record_metric("devxos.metrics.revert_rate", metrics.revert_rate, {"repo": repo_name})
 
-    # Auto-push if logged in (unless --no-push)
-    if not args.no_push:
-        from devxos.platform.config import get_auth
-        if get_auth():
-            with span("push", {"repo": repo_name}):
-                _push_after_analysis(metrics_path, repo_name, args.days)
-            record_counter("devxos.push.success", 1, {"repo": repo_name})
+    # Push or write to filesystem
+    if will_push:
+        import shutil
+        with span("push", {"repo": repo_name}):
+            _push_after_analysis(metrics_path, repo_name, args.days)
+        record_counter("devxos.push.success", 1, {"repo": repo_name})
+        shutil.rmtree(tmp_out, ignore_errors=True)
+    else:
+        print()
+        print(f"{s['cli_label_report']:<14}: {report_path}")
+        print(f"{s['cli_label_metrics']:<14}: {metrics_path}")
 
     flush()
 
