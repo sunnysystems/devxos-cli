@@ -268,11 +268,16 @@ def _run_single_repo(args: argparse.Namespace) -> None:
         lang=args.lang,
     )
 
+    # Check early if we'll push (to adjust output)
+    from devxos.platform.config import get_auth
+    will_push = not args.no_push and get_auth() is not None
+
     print(f"DevXOS {VERSION}")
     print(f"{s['cli_banner_repo']:<14}: {repo}")
     print(f"{s['cli_banner_lookback']:<14}: {args.days} {s['unit_days']}")
     print(f"{s['cli_banner_churn']:<14}: {args.churn_days} {s['unit_days']}")
-    print(f"{s['cli_banner_output']:<14}: {out_dir}")
+    if not will_push:
+        print(f"{s['cli_banner_output']:<14}: {out_dir}")
     print()
 
     # Step 1: Ingest commits
@@ -490,10 +495,6 @@ def _run_single_repo(args: argparse.Namespace) -> None:
 
     # Step 6: Generate narrative
     narrative = generate_narrative(metrics, lang=args.lang, trend=trend)
-
-    # Check if we should auto-push (logged in and not --no-push)
-    from devxos.platform.config import get_auth
-    will_push = not args.no_push and get_auth() is not None
 
     # Step 7: Write output
     # If pushing, write to a temp dir (don't pollute the repo)
