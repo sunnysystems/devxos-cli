@@ -718,9 +718,95 @@ def _run_hook(argv: list[str]) -> None:
         sys.exit(1)
 
 
+def _run_uninstall() -> None:
+    """Remove DevXOS from the system."""
+    import shutil
+
+    install_dir = os.path.expanduser("~/.devxos")
+    bin_wrapper = os.path.join(install_dir, "bin", "devxos")
+
+    print("")
+    print("  This will remove DevXOS from your machine:")
+    print("")
+    if os.path.isdir(install_dir):
+        print(f"    - Delete {install_dir}/ (venv, config, bin)")
+    else:
+        print(f"    - {install_dir}/ not found")
+
+    # Check shell rc files for PATH entry
+    shell_rc_files = [
+        os.path.expanduser("~/.zshrc"),
+        os.path.expanduser("~/.bashrc"),
+        os.path.expanduser("~/.profile"),
+    ]
+    rc_with_devxos = []
+    for rc in shell_rc_files:
+        if os.path.isfile(rc):
+            with open(rc) as f:
+                if ".devxos/bin" in f.read():
+                    rc_with_devxos.append(rc)
+
+    if rc_with_devxos:
+        print(f"    - Remove PATH entry from: {', '.join(rc_with_devxos)}")
+
+    # Check pipx
+    is_pipx = False
+    if not os.path.isdir(install_dir):
+        # Might be installed via pipx
+        pipx_path = os.path.expanduser("~/.local/pipx/venvs/devxos")
+        if os.path.isdir(pipx_path):
+            is_pipx = True
+            print(f"    - Uninstall pipx package: devxos")
+
+    print("")
+    try:
+        reply = input("  Proceed? [y/N] ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print("\n  Cancelled.")
+        return
+
+    if reply.lower() not in ("y", "yes"):
+        print("  Cancelled.")
+        return
+
+    # Remove install dir
+    if os.path.isdir(install_dir):
+        shutil.rmtree(install_dir)
+        print(f"  Removed {install_dir}/")
+
+    # Clean shell rc files
+    for rc in rc_with_devxos:
+        with open(rc) as f:
+            lines = f.readlines()
+        with open(rc, "w") as f:
+            skip_next = False
+            for line in lines:
+                if "# DevXOS" in line:
+                    skip_next = True
+                    continue
+                if skip_next and ".devxos/bin" in line:
+                    skip_next = False
+                    continue
+                skip_next = False
+                f.write(line)
+        print(f"  Cleaned {rc}")
+
+    # Pipx uninstall
+    if is_pipx:
+        os.system("pipx uninstall devxos 2>/dev/null")
+        print("  Uninstalled pipx package")
+
+    print("")
+    print("  DevXOS has been removed. Restart your terminal to complete.")
+    print("")
+
+
 def main(argv: list[str] | None = None) -> None:
     # Intercept subcommands before argparse (they use different arg structures)
     raw_argv = argv if argv is not None else sys.argv[1:]
+    if raw_argv and raw_argv[0] == "uninstall":
+        _run_uninstall()
+        return
     if raw_argv and raw_argv[0] == "hook":
         _run_hook(raw_argv[1:])
         return

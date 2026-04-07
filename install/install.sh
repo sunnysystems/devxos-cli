@@ -5,38 +5,36 @@
 #   curl -fsSL https://devxos.ai/install.sh | sh
 #   wget -qO- https://devxos.ai/install.sh | sh
 #
-# What it does:
-#   1. Checks for Python 3.11+
-#   2. Installs DevXOS via pipx (preferred) or pip
-#   3. Verifies the `devxos` command is available
-#
 # Environment variables:
-#   DEVXOS_INSTALL_METHOD=pip    Force pip instead of pipx
-#   DEVXOS_BRANCH=main          Git branch to install from
+#   DEVXOS_HOME=~/.devxos           Install location (default: ~/.devxos)
+#   DEVXOS_INSTALL_METHOD=pip       Force pip instead of pipx
+#   DEVXOS_BRANCH=main              Git branch to install from
+#   DEVXOS_YES=1                    Skip confirmation prompt
 
 set -e
 
-REPO_HTTPS="https://github.com/sunnysystems/devxos-cli.git"
-
-REPO_URL="git+${REPO_HTTPS}"
+REPO_URL="git+https://github.com/sunnysystems/devxos-cli.git"
 BRANCH="${DEVXOS_BRANCH:-main}"
 MIN_PYTHON="3.11"
+INSTALL_DIR="${DEVXOS_HOME:-$HOME/.devxos}"
 
 # --- Colors (disabled if not a terminal) ---
 if [ -t 1 ]; then
     GREEN='\033[0;32m'
     YELLOW='\033[0;33m'
     RED='\033[0;31m'
+    DIM='\033[2m'
     BOLD='\033[1m'
     NC='\033[0m'
 else
-    GREEN='' YELLOW='' RED='' BOLD='' NC=''
+    GREEN='' YELLOW='' RED='' DIM='' BOLD='' NC=''
 fi
 
 info()  { printf "${GREEN}>>>${NC} %s\n" "$1"; }
 warn()  { printf "${YELLOW}>>>${NC} %s\n" "$1"; }
 error() { printf "${RED}>>>${NC} %s\n" "$1"; }
 bold()  { printf "${BOLD}%s${NC}\n" "$1"; }
+dim()   { printf "${DIM}%s${NC}\n" "$1"; }
 
 # --- Detect Python ---
 find_python() {
@@ -71,13 +69,63 @@ detect_os() {
     esac
 }
 
+# --- Detect shell rc file ---
+detect_shell_rc() {
+    # Prefer the user's current shell, fall back to common files
+    case "$SHELL" in
+        */zsh)  echo "$HOME/.zshrc" ;;
+        */bash) echo "$HOME/.bashrc" ;;
+        *)
+            # Check which files exist
+            if [ -f "$HOME/.zshrc" ]; then
+                echo "$HOME/.zshrc"
+            elif [ -f "$HOME/.bashrc" ]; then
+                echo "$HOME/.bashrc"
+            elif [ -f "$HOME/.profile" ]; then
+                echo "$HOME/.profile"
+            else
+                echo ""
+            fi
+            ;;
+    esac
+}
+
+# --- Add to PATH ---
+ensure_path() {
+    BIN_DIR="$1"
+
+    # Already on PATH?
+    case ":$PATH:" in
+        *":$BIN_DIR:"*) return 0 ;;
+    esac
+
+    SHELL_RC=$(detect_shell_rc)
+    EXPORT_LINE="export PATH=\"$BIN_DIR:\$PATH\""
+
+    if [ -n "$SHELL_RC" ]; then
+        if ! grep -q "$BIN_DIR" "$SHELL_RC" 2>/dev/null; then
+            printf "\n# DevXOS\n%s\n" "$EXPORT_LINE" >> "$SHELL_RC"
+            info "Added to PATH via $SHELL_RC"
+        else
+            dim "  PATH already configured in $SHELL_RC"
+        fi
+    else
+        warn "Could not detect shell profile. Add this to your shell config:"
+        echo ""
+        echo "  $EXPORT_LINE"
+        echo ""
+    fi
+
+    # Make available in current session
+    export PATH="$BIN_DIR:$PATH"
+}
+
 # --- Main ---
 main() {
     bold "DevXOS Installer"
     echo ""
 
     OS=$(detect_os)
-    info "Detected OS: $OS"
 
     # Check Python
     PYTHON=$(find_python) || {
@@ -92,18 +140,15 @@ main() {
     }
 
     PYTHON_VERSION=$("$PYTHON" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')")
-    info "Python: $PYTHON ($PYTHON_VERSION)"
 
     # Check git
     if ! command -v git >/dev/null 2>&1; then
         error "Git is required but not found."
         exit 1
     fi
-    info "Git: $(git --version | head -1)"
 
     # Choose install method
     METHOD="${DEVXOS_INSTALL_METHOD:-auto}"
-
     if [ "$METHOD" = "auto" ]; then
         if command -v pipx >/dev/null 2>&1; then
             METHOD="pipx"
@@ -112,30 +157,68 @@ main() {
         fi
     fi
 
+    # --- Show plan and ask for confirmation ---
+    echo "  This will install DevXOS CLI on your machine."
+    echo ""
+    echo "  ${BOLD}What will happen:${NC}"
+    echo ""
+    if [ "$METHOD" = "pipx" ]; then
+        echo "    1. Install DevXOS via pipx (isolated environment)"
+        echo "       Location: managed by pipx (~/.local/pipx/venvs/devxos)"
+        echo "       Binary:   ~/.local/bin/devxos"
+    else
+        echo "    1. Create a Python virtual environment"
+        echo "       Location: ${INSTALL_DIR}/venv"
+        echo ""
+        echo "    2. Install DevXOS into that venv"
+        echo "       Binary:   ${INSTALL_DIR}/bin/devxos"
+        echo ""
+        echo "    3. Add ${INSTALL_DIR}/bin to your PATH"
+        SHELL_RC=$(detect_shell_rc)
+        if [ -n "$SHELL_RC" ]; then
+            echo "       Via:      $SHELL_RC"
+        fi
+    fi
+    echo ""
+    dim "  Python: $PYTHON ($PYTHON_VERSION) | Git: $(git --version | cut -d' ' -f3) | OS: $OS"
     echo ""
 
+    # Ask for confirmation (skip with DEVXOS_YES=1 or -y flag)
+    if [ "${DEVXOS_YES}" != "1" ] && [ "$1" != "-y" ] && [ "$1" != "--yes" ]; then
+        printf "  Proceed with installation? [Y/n] "
+        if [ -t 0 ]; then
+            read -r REPLY
+            case "$REPLY" in
+                [nN]*) echo "  Installation cancelled."; exit 0 ;;
+            esac
+        else
+            # Non-interactive (piped) — proceed by default
+            echo "y (non-interactive)"
+        fi
+    fi
+
+    echo ""
+
+    # --- Install ---
     case "$METHOD" in
         pipx)
-            info "Installing via pipx (isolated environment)..."
+            info "Installing via pipx..."
             pipx install "${REPO_URL}@${BRANCH}" --python "$PYTHON" 2>&1 || {
-                # If already installed, upgrade
                 warn "Attempting upgrade..."
                 pipx upgrade devxos 2>&1 || pipx install --force "${REPO_URL}@${BRANCH}" --python "$PYTHON" 2>&1
             }
+            ensure_path "$HOME/.local/bin"
             ;;
         pip)
-            INSTALL_DIR="${DEVXOS_HOME:-$HOME/.devxos}"
             VENV_DIR="$INSTALL_DIR/venv"
             BIN_DIR="$INSTALL_DIR/bin"
 
-            info "Installing to $INSTALL_DIR..."
-
-            # Create dedicated venv
+            info "Creating virtual environment..."
             mkdir -p "$INSTALL_DIR"
             "$PYTHON" -m venv "$VENV_DIR" 2>&1
 
-            # Install into venv
-            "$VENV_DIR/bin/pip" install "${REPO_URL}@${BRANCH}" 2>&1
+            info "Installing DevXOS..."
+            "$VENV_DIR/bin/pip" install --quiet "${REPO_URL}@${BRANCH}" 2>&1
 
             # Create bin wrapper
             mkdir -p "$BIN_DIR"
@@ -145,62 +228,34 @@ exec "$VENV_DIR/bin/devxos" "\$@"
 WRAPPER
             chmod +x "$BIN_DIR/devxos"
 
-            # Add to PATH if needed
-            case ":$PATH:" in
-                *":$BIN_DIR:"*) ;;
-                *)
-                    SHELL_RC=""
-                    case "$SHELL" in
-                        */zsh)  SHELL_RC="$HOME/.zshrc" ;;
-                        */bash) SHELL_RC="$HOME/.bashrc" ;;
-                    esac
-
-                    EXPORT_LINE="export PATH=\"$BIN_DIR:\$PATH\""
-
-                    if [ -n "$SHELL_RC" ]; then
-                        if ! grep -q "$BIN_DIR" "$SHELL_RC" 2>/dev/null; then
-                            echo "" >> "$SHELL_RC"
-                            echo "# DevXOS" >> "$SHELL_RC"
-                            echo "$EXPORT_LINE" >> "$SHELL_RC"
-                            info "Added to $SHELL_RC"
-                        fi
-                    else
-                        warn "Add to your shell profile:"
-                        echo ""
-                        echo "  $EXPORT_LINE"
-                        echo ""
-                    fi
-
-                    export PATH="$BIN_DIR:$PATH"
-                    ;;
-            esac
+            ensure_path "$BIN_DIR"
             ;;
     esac
 
     echo ""
 
-    # Verify
+    # --- Verify ---
     if command -v devxos >/dev/null 2>&1; then
         info "Installation successful!"
         echo ""
-        bold "$(devxos --help 2>&1 | head -1 || echo 'DevXOS installed')"
+        echo "  Get started:"
         echo ""
-        echo "  Analyze a repo:     devxos /path/to/repo"
-        echo "  Analyze an org:     devxos --org /path/to/org"
-        echo "  Install AI hook:    devxos hook install /path/to/repo"
-        echo "  With trend:         devxos /path/to/repo --trend"
+        echo "    devxos login                          Connect to DevXOS platform"
+        echo "    devxos /path/to/repo                  Analyze a repository"
+        echo "    devxos /path/to/repo --push           Analyze and push to platform"
+        echo "    devxos hook install /path/to/repo     Install AI commit tracking"
+        echo "    devxos uninstall                      Remove DevXOS from your machine"
+        echo ""
+        dim "  Restart your terminal or run: source $(detect_shell_rc)"
         echo ""
     else
-        warn "devxos was installed but is not on PATH."
-        warn "You may need to restart your shell or add the install location to PATH."
+        warn "DevXOS was installed but is not yet on PATH in this session."
+        warn "Restart your terminal, then run: devxos --help"
     fi
 
     # Optional: check for gh CLI
-    if command -v gh >/dev/null 2>&1; then
-        info "GitHub CLI detected — PR analysis will be available."
-    else
-        warn "GitHub CLI (gh) not found — PR analysis will be skipped."
-        echo "  Install: https://cli.github.com/"
+    if ! command -v gh >/dev/null 2>&1; then
+        dim "  Tip: Install GitHub CLI (gh) for PR analysis — https://cli.github.com/"
     fi
 }
 
