@@ -186,15 +186,11 @@ main() {
     # Ask for confirmation (skip with DEVXOS_YES=1 or -y flag)
     if [ "${DEVXOS_YES}" != "1" ] && [ "$1" != "-y" ] && [ "$1" != "--yes" ]; then
         printf "  Proceed with installation? [Y/n] "
-        if [ -t 0 ]; then
-            read -r REPLY
-            case "$REPLY" in
-                [nN]*) echo "  Installation cancelled."; exit 0 ;;
-            esac
-        else
-            # Non-interactive (piped) — proceed by default
-            echo "y (non-interactive)"
-        fi
+        # Read from /dev/tty so it works even when piped (curl | sh)
+        read -r REPLY < /dev/tty
+        case "$REPLY" in
+            [nN]*) echo "  Installation cancelled."; exit 0 ;;
+        esac
     fi
 
     echo ""
