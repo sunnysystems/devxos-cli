@@ -74,11 +74,20 @@ detect_shell_rc() {
     # Prefer the user's current shell, fall back to common files
     case "$SHELL" in
         */zsh)  echo "$HOME/.zshrc" ;;
-        */bash) echo "$HOME/.bashrc" ;;
+        */bash)
+            # macOS uses login shells (.bash_profile), Linux uses .bashrc
+            if [ "$(uname -s)" = "Darwin" ]; then
+                echo "$HOME/.bash_profile"
+            else
+                echo "$HOME/.bashrc"
+            fi
+            ;;
         *)
-            # Check which files exist
+            # Check which files exist, in priority order
             if [ -f "$HOME/.zshrc" ]; then
                 echo "$HOME/.zshrc"
+            elif [ -f "$HOME/.bash_profile" ]; then
+                echo "$HOME/.bash_profile"
             elif [ -f "$HOME/.bashrc" ]; then
                 echo "$HOME/.bashrc"
             elif [ -f "$HOME/.profile" ]; then

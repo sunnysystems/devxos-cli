@@ -752,6 +752,7 @@ def _run_uninstall() -> None:
     # Check shell rc files for PATH entry
     shell_rc_files = [
         os.path.expanduser("~/.zshrc"),
+        os.path.expanduser("~/.bash_profile"),
         os.path.expanduser("~/.bashrc"),
         os.path.expanduser("~/.profile"),
     ]
