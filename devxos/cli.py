@@ -228,7 +228,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--push",
         action="store_true",
         default=False,
-        help="Push metrics to DevXOS platform after analysis",
+        help="(default if logged in) Push metrics to DevXOS platform",
+    )
+    parser.add_argument(
+        "--no-push",
+        action="store_true",
+        default=False,
+        help="Skip auto-push even if logged in (write to filesystem only)",
     )
     return parser.parse_args(argv)
 
@@ -503,11 +509,13 @@ def _run_single_repo(args: argparse.Namespace) -> None:
     record_metric("devxos.metrics.churn_events", float(metrics.churn_events), {"repo": repo_name})
     record_metric("devxos.metrics.revert_rate", metrics.revert_rate, {"repo": repo_name})
 
-    # Push to platform if --push flag is set
-    if args.push:
-        with span("push", {"repo": repo_name}):
-            _push_after_analysis(metrics_path, repo_name, args.days)
-        record_counter("devxos.push.success", 1, {"repo": repo_name})
+    # Auto-push if logged in (unless --no-push)
+    if not args.no_push:
+        from devxos.platform.config import get_auth
+        if get_auth():
+            with span("push", {"repo": repo_name}):
+                _push_after_analysis(metrics_path, repo_name, args.days)
+            record_counter("devxos.push.success", 1, {"repo": repo_name})
 
     flush()
 
