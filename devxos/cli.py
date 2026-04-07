@@ -160,6 +160,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "Analyzes a Git repository and generates an impact report "
             "measuring delivery signal vs noise."
         ),
+        epilog=(
+            "commands:\n"
+            "  devxos login                          Connect to DevXOS platform\n"
+            "  devxos auth status                    Show current auth config\n"
+            "  devxos auth logout                    Remove saved credentials\n"
+            "  devxos hook install <repo> [--auto-push]  Install AI commit tracking\n"
+            "  devxos hook uninstall <repo>          Remove hooks from a repo\n"
+            "  devxos hook status <repo>             Check hook installation\n"
+            "  devxos push <metrics.json>            Push metrics file to platform\n"
+            "  devxos uninstall                      Remove DevXOS from your machine\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "repo_path",
