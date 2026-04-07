@@ -703,15 +703,16 @@ def _run_push(argv: list[str]) -> None:
 
 def _push_after_analysis(metrics_path: str, repo_name: str, window_days: int) -> None:
     """Push metrics to platform after analysis (called when --push is used)."""
-    from devxos.platform.config import get_auth
+    from devxos.platform.config import get_auth, get_github_user
     from devxos.platform.push import push_metrics
 
     auth = get_auth()
     if not auth:
-        print("\n--push: Not authenticated. Run: devxos auth login")
+        print("\n--push: Not authenticated. Run: devxos login")
         return
 
     server, token = auth
+    github_user = get_github_user()
     print(f"\nPushing to {server}...", end=" ", flush=True)
 
     try:
@@ -721,6 +722,7 @@ def _push_after_analysis(metrics_path: str, repo_name: str, window_days: int) ->
             repository=repo_name,
             metrics_path=metrics_path,
             window_days=window_days,
+            github_user=github_user,
             cli_version=VERSION,
         )
         print(f"done. (run: {result.get('run_id', '?')[:8]})")

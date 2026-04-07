@@ -40,3 +40,53 @@ def get_auth() -> tuple[str, str] | None:
 def get_org_slug() -> str | None:
     """Return the configured org slug, or None."""
     return load_config().get("org_slug")
+
+
+def get_github_user() -> str | None:
+    """Return the GitHub username, detecting and caching on first call.
+
+    Priority:
+    1. Cached value in config.json
+    2. `gh api user -q .login` (GitHub CLI)
+    3. `git config user.email` (fallback)
+    """
+    import subprocess
+
+    config = load_config()
+
+    # Return cached value
+    cached = config.get("github_user")
+    if cached:
+        return cached
+
+    user = None
+
+    # Try GitHub CLI
+    try:
+        result = subprocess.run(
+            ["gh", "api", "user", "-q", ".login"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            user = result.stdout.strip()
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+    # Fallback to git email
+    if not user:
+        try:
+            result = subprocess.run(
+                ["git", "config", "user.email"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                user = result.stdout.strip()
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+
+    # Cache for next time
+    if user:
+        config["github_user"] = user
+        save_config(config)
+
+    return user
