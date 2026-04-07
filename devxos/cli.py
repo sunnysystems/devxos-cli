@@ -15,7 +15,7 @@ from devxos.models.context import AnalysisContext
 from devxos.reports.narrative import generate_narrative
 from devxos.reports.writer import write_output
 
-VERSION = "v0.5"
+VERSION = "v1.0"
 
 
 def _merge_durability(metrics, durability):
