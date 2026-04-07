@@ -16,6 +16,7 @@ import stat
 
 # Hook filename in .git/hooks/
 HOOK_NAME = "prepare-commit-msg"
+POST_COMMIT_HOOK_NAME = "post-commit"
 
 # Legacy hook to clean up on install
 LEGACY_HOOK_NAME = "post-commit"
@@ -24,10 +25,20 @@ LEGACY_HOOK_NAME = "post-commit"
 HOOK_MARKER_START = "# >>> devxos-hook-start >>>"
 HOOK_MARKER_END = "# <<< devxos-hook-end <<<"
 
+PUSH_MARKER_START = "# >>> devxos-push-start >>>"
+PUSH_MARKER_END = "# <<< devxos-push-end <<<"
+
 
 def get_hook_script() -> str:
     """Read the prepare-commit-msg hook script template."""
     hook_path = os.path.join(os.path.dirname(__file__), "prepare_commit_msg.sh")
+    with open(hook_path) as f:
+        return f.read()
+
+
+def get_push_hook_script() -> str:
+    """Read the post-commit push hook script template."""
+    hook_path = os.path.join(os.path.dirname(__file__), "post_commit_push.sh")
     with open(hook_path) as f:
         return f.read()
 
@@ -200,6 +211,86 @@ def status(repo_path: str) -> dict:
         "hook_path": None,
         "hooks_dir": hooks_dir,
     }
+
+
+def install_push_hook(repo_path: str) -> str:
+    """Install the DevXOS post-commit auto-push hook.
+
+    Pushes analysis to platform once per day (on first commit of the day).
+    Runs in background so it doesn't block commits.
+
+    Args:
+        repo_path: Absolute path to a Git repository.
+
+    Returns:
+        Path to the installed hook file.
+    """
+    if not os.path.isdir(os.path.join(repo_path, ".git")):
+        raise FileNotFoundError(f"Not a git repository: {repo_path}")
+
+    hooks_dir = get_hooks_dir(repo_path)
+    hook_file = os.path.join(hooks_dir, POST_COMMIT_HOOK_NAME)
+
+    # Check if already installed
+    if os.path.isfile(hook_file):
+        with open(hook_file) as f:
+            if PUSH_MARKER_START in f.read():
+                raise FileExistsError("DevXOS push hook is already installed.")
+
+    os.makedirs(hooks_dir, exist_ok=True)
+
+    push_script = get_push_hook_script()
+    wrapped = f"\n{PUSH_MARKER_START}\n{push_script}\n{PUSH_MARKER_END}\n"
+
+    if os.path.isfile(hook_file):
+        with open(hook_file, "a") as f:
+            f.write(wrapped)
+    else:
+        with open(hook_file, "w") as f:
+            f.write(f"#!/bin/sh\n{wrapped}")
+
+    st = os.stat(hook_file)
+    os.chmod(hook_file, st.st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+    return hook_file
+
+
+def uninstall_push_hook(repo_path: str) -> bool:
+    """Remove the DevXOS push hook section."""
+    hooks_dir = get_hooks_dir(repo_path)
+    hook_file = os.path.join(hooks_dir, POST_COMMIT_HOOK_NAME)
+
+    if not os.path.isfile(hook_file):
+        return False
+
+    with open(hook_file) as f:
+        content = f.read()
+
+    if PUSH_MARKER_START not in content:
+        return False
+
+    _remove_marked_section_custom(hook_file, content, PUSH_MARKER_START, PUSH_MARKER_END)
+    return True
+
+
+def _remove_marked_section_custom(hook_file: str, content: str, start_marker: str, end_marker: str) -> None:
+    """Remove a marked section from a hook file."""
+    start_idx = content.find(start_marker)
+    end_idx = content.find(end_marker)
+    if start_idx == -1 or end_idx == -1:
+        return
+
+    end_idx = content.find("\n", end_idx) + 1
+    if start_idx > 0 and content[start_idx - 1] == "\n":
+        start_idx -= 1
+
+    cleaned = content[:start_idx] + content[end_idx:]
+
+    if cleaned.strip() in ("#!/bin/sh", "#!/bin/bash", ""):
+        os.remove(hook_file)
+    else:
+        with open(hook_file, "w") as f:
+            f.write(cleaned)
 
 
 def _remove_marked_section(hook_file: str, content: str) -> None:

@@ -35,3 +35,8 @@ def get_auth() -> tuple[str, str] | None:
     if server and token:
         return server, token
     return None
+
+
+def get_org_slug() -> str | None:
+    """Return the configured org slug, or None."""
+    return load_config().get("org_slug")

@@ -538,9 +538,39 @@ def _run_org(args: argparse.Namespace) -> None:
     )
 
 
+def _run_login(argv: list[str]) -> None:
+    """Handle `devxos login` — browser-based auth flow."""
+    from devxos.platform.auth import browser_login, manual_login
+
+    # Parse optional flags
+    server = None
+    token = None
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--server" and i + 1 < len(argv):
+            server = argv[i + 1]
+            i += 2
+        elif argv[i] == "--token" and i + 1 < len(argv):
+            token = argv[i + 1]
+            i += 2
+        else:
+            i += 1
+
+    # Manual token login (for CI/CD)
+    if token:
+        s = server or "https://devxos.ai"
+        if not manual_login(s, token):
+            sys.exit(1)
+        return
+
+    # Browser login
+    if not browser_login(server):
+        sys.exit(1)
+
+
 def _run_auth(argv: list[str]) -> None:
     """Handle `devxos auth login|status|logout` subcommands."""
-    from devxos.platform.config import load_config, save_config, get_auth
+    from devxos.platform.config import load_config, save_config, get_auth, get_org_slug
 
     if not argv:
         print("Usage: devxos auth <login|status|logout>", file=sys.stderr)
@@ -549,41 +579,27 @@ def _run_auth(argv: list[str]) -> None:
     action = argv[0]
 
     if action == "login":
-        config = load_config()
-
-        # Server URL
-        default_server = config.get("server_url", "http://localhost:3000")
-        server = input(f"Server URL [{default_server}]: ").strip()
-        if not server:
-            server = default_server
-
-        # Token
-        token = input("API token (dxos_...): ").strip()
-        if not token.startswith("dxos_"):
-            print("Error: token must start with 'dxos_'", file=sys.stderr)
-            sys.exit(1)
-
-        config["server_url"] = server
-        config["token"] = token
-        save_config(config)
-        print(f"Authenticated with {server}")
-        print(f"Token: {token[:12]}...")
-        print(f"Config saved to ~/.devxos/config.json")
+        # Delegate to the browser login flow
+        _run_login(argv[1:])
 
     elif action == "status":
         auth = get_auth()
         if auth:
             server, token = auth
+            org = get_org_slug()
             print(f"Server: {server}")
             print(f"Token:  {token[:12]}...")
+            if org:
+                print(f"Org:    {org}")
         else:
-            print("Not authenticated. Run: devxos auth login")
+            print("Not authenticated. Run: devxos login")
 
     elif action == "logout":
         config = load_config()
         config.pop("token", None)
+        config.pop("org_slug", None)
         save_config(config)
-        print("Logged out. Token removed from config.")
+        print("Logged out. Token and org removed from config.")
 
     else:
         print(f"Unknown auth action: {action}", file=sys.stderr)
@@ -809,6 +825,9 @@ def main(argv: list[str] | None = None) -> None:
         return
     if raw_argv and raw_argv[0] == "hook":
         _run_hook(raw_argv[1:])
+        return
+    if raw_argv and raw_argv[0] == "login":
+        _run_login(raw_argv[1:])
         return
     if raw_argv and raw_argv[0] == "auth":
         _run_auth(raw_argv[1:])
