@@ -14,6 +14,7 @@ def push_metrics(
     remote_url: str | None = None,
     cli_version: str | None = None,
     github_user: str | None = None,
+    active_users: list[str] | None = None,
 ) -> dict:
     """Push a metrics.json file to the DevXOS platform.
 
@@ -34,6 +35,8 @@ def push_metrics(
         payload["cli_version"] = cli_version
     if github_user:
         payload["github_user"] = github_user
+    if active_users:
+        payload["active_users"] = active_users
 
     url = f"{server_url.rstrip('/')}/api/ingest"
     data = json.dumps(payload).encode("utf-8")

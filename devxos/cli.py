@@ -525,8 +525,10 @@ def _run_single_repo(args: argparse.Namespace) -> None:
     # Push or write to filesystem
     if will_push:
         import shutil
+        # Extract unique commit authors for active user tracking
+        active_users = sorted(set(c.author for c in commits))
         with span("push", {"repo": repo_name}):
-            _push_after_analysis(metrics_path, repo_name, args.days)
+            _push_after_analysis(metrics_path, repo_name, args.days, active_users=active_users)
         record_counter("devxos.push.success", 1, {"repo": repo_name})
         shutil.rmtree(tmp_out, ignore_errors=True)
     else:
@@ -701,8 +703,13 @@ def _run_push(argv: list[str]) -> None:
         sys.exit(1)
 
 
-def _push_after_analysis(metrics_path: str, repo_name: str, window_days: int) -> None:
-    """Push metrics to platform after analysis (called when --push is used)."""
+def _push_after_analysis(
+    metrics_path: str,
+    repo_name: str,
+    window_days: int,
+    active_users: list[str] | None = None,
+) -> None:
+    """Push metrics to platform after analysis."""
     from devxos.platform.config import get_auth, get_github_user
     from devxos.platform.push import push_metrics
 
@@ -723,6 +730,7 @@ def _push_after_analysis(metrics_path: str, repo_name: str, window_days: int) ->
             metrics_path=metrics_path,
             window_days=window_days,
             github_user=github_user,
+            active_users=active_users,
             cli_version=VERSION,
         )
         print(f"done. (run: {result.get('run_id', '?')[:8]})")
