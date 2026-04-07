@@ -169,6 +169,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "  devxos hook uninstall <repo>          Remove hooks from a repo\n"
             "  devxos hook status <repo>             Check hook installation\n"
             "  devxos push <metrics.json>            Push metrics file to platform\n"
+            "  devxos upgrade                        Update to latest version\n"
             "  devxos uninstall                      Remove DevXOS from your machine\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -838,9 +839,53 @@ def _run_uninstall() -> None:
     print("")
 
 
+def _run_upgrade() -> None:
+    """Upgrade DevXOS CLI to the latest version."""
+    import subprocess
+
+    install_dir = os.path.expanduser("~/.devxos")
+    venv_pip = os.path.join(install_dir, "venv", "bin", "pip")
+    repo_url = "git+https://github.com/sunnysystems/devxos-cli.git@main"
+
+    # Detect install method
+    is_pipx = not os.path.isdir(install_dir) and os.path.isdir(
+        os.path.expanduser("~/.local/pipx/venvs/devxos")
+    )
+
+    print(f"\n  DevXOS {VERSION}")
+    print(f"  Checking for updates...\n")
+
+    try:
+        if is_pipx:
+            subprocess.run(["pipx", "upgrade", "devxos"], check=True)
+        elif os.path.isfile(venv_pip):
+            subprocess.run(
+                [venv_pip, "install", "--quiet", "--upgrade", repo_url],
+                check=True,
+            )
+        else:
+            print("  Could not detect install method.", file=sys.stderr)
+            print("  Reinstall with: curl -fsSL https://devxos.ai/install.sh | sh")
+            sys.exit(1)
+
+        # Show new version
+        result = subprocess.run(
+            [os.path.join(install_dir, "venv", "bin", "devxos") if not is_pipx else "devxos",
+             ".", "--help"],
+            capture_output=True, text=True,
+        )
+        print("  Upgrade complete.\n")
+    except subprocess.CalledProcessError as e:
+        print(f"  Upgrade failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
 def main(argv: list[str] | None = None) -> None:
     # Intercept subcommands before argparse (they use different arg structures)
     raw_argv = argv if argv is not None else sys.argv[1:]
+    if raw_argv and raw_argv[0] == "upgrade":
+        _run_upgrade()
+        return
     if raw_argv and raw_argv[0] == "uninstall":
         _run_uninstall()
         return
