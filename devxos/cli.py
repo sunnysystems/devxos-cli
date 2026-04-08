@@ -525,8 +525,14 @@ def _run_single_repo(args: argparse.Namespace) -> None:
     # Push or write to filesystem
     if will_push:
         import shutil
-        # Extract unique commit authors for active user tracking
-        active_users = sorted(set(c.author for c in commits))
+        # Extract unique commit authors, deduplicated by email
+        authors_by_email: dict[str, str] = {}
+        for c in commits:
+            email = c.author_email or c.author
+            # Keep the longest name per email (usually the full name)
+            if email not in authors_by_email or len(c.author) > len(authors_by_email[email]):
+                authors_by_email[email] = c.author
+        active_users = sorted(set(authors_by_email.values()))
         with span("push", {"repo": repo_name}):
             _push_after_analysis(metrics_path, repo_name, args.days, active_users=active_users)
         record_counter("devxos.push.success", 1, {"repo": repo_name})

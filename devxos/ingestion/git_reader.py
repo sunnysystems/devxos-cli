@@ -19,8 +19,8 @@ from devxos.models.commit import Commit, FileChange
 _FIELD_SEP = "<<<SEP>>>"
 _COMMIT_SEP = "<<<COMMIT>>>"
 
-# git log format: hash, author, date (ISO), parents (merge detection), subject, body
-_LOG_FORMAT = _FIELD_SEP.join(["%H", "%an", "%aI", "%P", "%s", "%b"]) + _COMMIT_SEP
+# git log format: hash, author, email, date (ISO), parents (merge detection), subject, body
+_LOG_FORMAT = _FIELD_SEP.join(["%H", "%an", "%ae", "%aI", "%P", "%s", "%b"]) + _COMMIT_SEP
 
 # Co-author extraction from commit body
 _CO_AUTHOR_RE = re.compile(r"Co-[Aa]uthored-[Bb]y: .+ <(.+)>", re.MULTILINE)
@@ -85,6 +85,7 @@ def _parse_log_output(raw: str, include_merges: bool) -> list[Commit]:
                 commits[-1] = Commit(
                     hash=prev.hash,
                     author=prev.author,
+                    author_email=prev.author_email,
                     date=prev.date,
                     message=prev.message,
                     files=prev.files + extra_files,
@@ -115,6 +116,7 @@ def _parse_log_output(raw: str, include_merges: bool) -> list[Commit]:
             commits[-1] = Commit(
                 hash=prev.hash,
                 author=prev.author,
+                author_email=prev.author_email,
                 date=prev.date,
                 message=prev.message,
                 files=prev.files + extra_files,
@@ -125,13 +127,13 @@ def _parse_log_output(raw: str, include_merges: bool) -> list[Commit]:
         # Parse this commit's metadata
         meta_and_body = chunk[meta_start:]
         parts = meta_and_body.split(_FIELD_SEP)
-        if len(parts) < 5:
+        if len(parts) < 6:
             continue
 
-        commit_hash, author, date_str, parents, message = (
-            parts[0], parts[1], parts[2], parts[3], parts[4]
+        commit_hash, author, author_email, date_str, parents, message = (
+            parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]
         )
-        body = parts[5] if len(parts) > 5 else ""
+        body = parts[6] if len(parts) > 6 else ""
         numstat_lines = []
 
         # Merge detection: merge commits have 2+ parents
@@ -151,6 +153,7 @@ def _parse_log_output(raw: str, include_merges: bool) -> list[Commit]:
         commits.append(Commit(
             hash=commit_hash.strip(),
             author=author.strip(),
+            author_email=author_email.strip(),
             date=date,
             message=message.strip(),
             files=files,
