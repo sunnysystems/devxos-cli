@@ -525,105 +525,66 @@ def _run_single_repo(args: argparse.Namespace) -> None:
     # Push or write to filesystem
     if will_push:
         import shutil
-        # Extract unique commit authors, deduplicated aggressively.
-        # Problem: same person commits as "Fabio Wakim Trentini <trentas@gmail.com>"
-        # and "trentas <trentas@users.noreply.github.com>".
-        # Strategy: collect all (name, email) pairs, then merge by:
-        #   1. Same email → same person
-        #   2. GitHub noreply username matches local part of another email → same person
-        #   3. Author name matches exactly → same person
+        # Extract unique commit authors using GitHub API to resolve real names.
         import re
-
-        # Collect all author identities
-        identities: list[tuple[str, str]] = []
-        for c in commits:
-            identities.append((c.author, c.author_email or ""))
-
-        # Build union-find groups by email local part
-        # Key: normalized identifier → set of (name, email) pairs
-        groups: dict[str, list[tuple[str, str]]] = {}
-
-        def _email_local(email: str) -> str:
-            return email.split("@")[0].lower().lstrip("0123456789+")
+        import subprocess
 
         def _gh_username(email: str) -> str | None:
+            """Extract GitHub username from noreply email."""
             m = re.match(r"(?:\d+\+)?(.+)@users\.noreply\.github\.com$", email)
-            return m.group(1).lower() if m else None
+            return m.group(1) if m else None
 
-        for name, email in identities:
-            keys = set()
+        def _resolve_gh_name(username: str) -> str | None:
+            """Resolve GitHub username to real name via gh API."""
+            try:
+                r = subprocess.run(
+                    ["gh", "api", f"users/{username}", "-q", ".name"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if r.returncode == 0 and r.stdout.strip():
+                    return r.stdout.strip()
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                pass
+            return None
+
+        # Step 1: Collect all unique emails and resolve GitHub usernames
+        email_to_names: dict[str, set[str]] = {}
+        gh_usernames: set[str] = set()
+
+        for c in commits:
+            email = (c.author_email or "").lower()
             if email:
-                keys.add(_email_local(email))
+                email_to_names.setdefault(email, set()).add(c.author)
                 gh = _gh_username(email)
                 if gh:
-                    keys.add(gh)
-            keys.add(name.lower())
+                    gh_usernames.add(gh)
 
-            # Find existing group that shares a key
-            merged_group = None
-            for k in keys:
-                if k in groups:
-                    merged_group = k
-                    break
+        # Step 2: Resolve GitHub usernames to real names
+        gh_name_cache: dict[str, str] = {}
+        for username in gh_usernames:
+            real_name = _resolve_gh_name(username)
+            if real_name:
+                gh_name_cache[username.lower()] = real_name
 
-            if merged_group:
-                groups[merged_group].append((name, email))
-                # Also register all keys to this group
-                for k in keys:
-                    if k not in groups:
-                        groups[k] = groups[merged_group]
+        # Step 3: Build identity map — group by GitHub username or email local
+        identity_names: dict[str, str] = {}  # key → best name
+        for email, names in email_to_names.items():
+            gh = _gh_username(email)
+            key = (gh or email.split("@")[0]).lower()
+
+            # Best name: GitHub API name > longest git name
+            best = gh_name_cache.get(key) or max(names, key=len)
+            if key in identity_names:
+                # Keep the one with spaces (real name) or longest
+                old = identity_names[key]
+                if " " in best and " " not in old:
+                    identity_names[key] = best
+                elif len(best) > len(old):
+                    identity_names[key] = best
             else:
-                group = [(name, email)]
-                for k in keys:
-                    groups[k] = group
+                identity_names[key] = best
 
-        # Collect unique groups
-        seen_groups: set[int] = set()
-        unique_groups: list[list[tuple[str, str]]] = []
-        for group in groups.values():
-            gid = id(group)
-            if gid in seen_groups:
-                continue
-            seen_groups.add(gid)
-            unique_groups.append(group)
-
-        # Second pass: merge groups where a username-style name is a prefix
-        # of a real name's first word (e.g. "kauebonfimm" ~ "Kaue Bonfim")
-        def _best_name(group: list[tuple[str, str]]) -> str:
-            return max(
-                (name for name, _ in group),
-                key=lambda n: (not n.replace("-", "").replace("_", "").isalnum(), len(n)),
-            )
-
-        def _is_username(name: str) -> bool:
-            return name == name.lower() and " " not in name
-
-        merged = True
-        while merged:
-            merged = False
-            for i in range(len(unique_groups)):
-                if not unique_groups[i]:
-                    continue
-                name_i = _best_name(unique_groups[i])
-                for j in range(i + 1, len(unique_groups)):
-                    if not unique_groups[j]:
-                        continue
-                    name_j = _best_name(unique_groups[j])
-                    # Try to match username to real name
-                    username = name_i if _is_username(name_i) else (name_j if _is_username(name_j) else None)
-                    real_name = name_j if username == name_i else (name_i if username == name_j else None)
-                    if username and real_name and " " in real_name:
-                        first = real_name.split()[0].lower()
-                        last = real_name.split()[-1].lower()
-                        uname = username.replace("-", "").replace("_", "").rstrip("0123456789")
-                        if first in uname or last in uname or uname.startswith(first):
-                            unique_groups[i].extend(unique_groups[j])
-                            unique_groups[j] = []
-                            merged = True
-
-        active_users = sorted(
-            _best_name(g) for g in unique_groups if g
-        )
+        active_users = sorted(set(identity_names.values()))
         with span("push", {"repo": repo_name}):
             _push_after_analysis(metrics_path, repo_name, args.days, active_users=active_users)
         record_counter("devxos.push.success", 1, {"repo": repo_name})
