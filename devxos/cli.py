@@ -581,6 +581,7 @@ def _run_single_repo(args: argparse.Namespace) -> None:
 
         # Step 3: Build identity map — group by GitHub username or email local
         identity_names: dict[str, str] = {}  # key → best name
+        identity_github: dict[str, str | None] = {}  # key → github username
         for email, names in email_to_names.items():
             gh = _gh_username(email)
             key = (gh or email.split("@")[0]).lower()
@@ -597,7 +598,23 @@ def _run_single_repo(args: argparse.Namespace) -> None:
             else:
                 identity_names[key] = best
 
-        active_users = sorted(set(identity_names.values()))
+            # Track GitHub username for avatar
+            if gh and key not in identity_github:
+                identity_github[key] = gh
+
+        # Build active_users as objects with name + github username
+        active_users_list = []
+        seen_names: set[str] = set()
+        for key, name in sorted(identity_names.items(), key=lambda x: x[1]):
+            if name in seen_names:
+                continue
+            seen_names.add(name)
+            entry: dict[str, str] = {"name": name}
+            gh_user = identity_github.get(key)
+            if gh_user:
+                entry["github"] = gh_user
+            active_users_list.append(entry)
+        active_users = active_users_list
         with span("push", {"repo": repo_name}):
             _push_after_analysis(metrics_path, repo_name, args.days, active_users=active_users)
         record_counter("devxos.push.success", 1, {"repo": repo_name})
@@ -778,7 +795,7 @@ def _push_after_analysis(
     metrics_path: str,
     repo_name: str,
     window_days: int,
-    active_users: list[str] | None = None,
+    active_users: list | None = None,
 ) -> None:
     """Push metrics to platform after analysis."""
     from devxos.platform.config import get_auth, get_github_user
