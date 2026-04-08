@@ -493,6 +493,18 @@ def _run_single_repo(args: argparse.Namespace) -> None:
     else:
         print(s["cli_velocity_skipped"].format(min=MIN_COMMITS_FOR_VELOCITY))
 
+    # Step 5d: Author velocity (LOC per author per week)
+    author_velocity = None
+    from devxos.analysis.author_velocity import compute_author_velocity
+    author_velocity = compute_author_velocity(commits)
+    if author_velocity:
+        high = author_velocity.high_velocity_authors
+        total = author_velocity.total_authors
+        if high > 0:
+            print(f"Author velocity: {total} authors, {high} with high LOC/week (>1000).")
+        else:
+            print(f"Author velocity: {total} authors analyzed.")
+
     # Step 6: Generate narrative
     narrative = generate_narrative(metrics, lang=args.lang, trend=trend)
 
@@ -512,6 +524,7 @@ def _run_single_repo(args: argparse.Namespace) -> None:
     report_path, metrics_path = write_output(
         ctx, metrics, narrative_sections=narrative, trend=trend,
         adoption=adoption, velocity=velocity, priming=priming,
+        author_velocity=author_velocity,
     )
     print(s["cli_done"])
 

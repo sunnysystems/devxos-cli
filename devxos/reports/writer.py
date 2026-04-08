@@ -28,6 +28,7 @@ def write_metrics_json(
     adoption: AdoptionResult | None = None,
     velocity: VelocityResult | None = None,
     priming: PrimingResult | None = None,
+    author_velocity: "AuthorVelocityResult | None" = None,
 ) -> str:
     """Write metrics.json to out_dir. Returns the file path."""
     data = metrics.to_dict()
@@ -50,6 +51,9 @@ def write_metrics_json(
                 for p in velocity.correlation_points
             ],
         }
+
+    if author_velocity is not None:
+        data["author_velocity"] = author_velocity.to_dict()
 
     funnel_result = calculate_origin_funnel(metrics)
     if funnel_result:
@@ -886,6 +890,7 @@ def write_output(
     adoption: AdoptionResult | None = None,
     velocity: VelocityResult | None = None,
     priming: PrimingResult | None = None,
+    author_velocity: "AuthorVelocityResult | None" = None,
 ) -> tuple[str, str]:
     """Write both output files. Creates out_dir if needed.
 
@@ -900,5 +905,6 @@ def write_output(
     metrics_path = write_metrics_json(
         ctx, metrics, ctx.out_dir,
         adoption=adoption, velocity=velocity, priming=priming,
+        author_velocity=author_velocity,
     )
     return report_path, metrics_path
