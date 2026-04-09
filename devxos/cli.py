@@ -602,11 +602,27 @@ def _run_single_repo(args: argparse.Namespace) -> None:
             if real_name:
                 gh_name_cache[username.lower()] = real_name
 
+        # Step 2b: Map author names to GitHub usernames
+        # An author with multiple emails (corporate + noreply) should
+        # inherit the GitHub username from whichever email resolved it.
+        name_to_gh: dict[str, str] = {}
+        for email, names in email_to_names.items():
+            gh = _gh_username(email) or email_gh_cache.get(email)
+            if gh:
+                for name in names:
+                    name_to_gh[name.lower()] = gh
+
         # Step 3: Build identity map — group by GitHub username or email local
         identity_names: dict[str, str] = {}  # key → best name
         identity_github: dict[str, str | None] = {}  # key → github username
         for email, names in email_to_names.items():
             gh = _gh_username(email) or email_gh_cache.get(email)
+            # Fallback: check if any name from this email has a known gh username
+            if not gh:
+                for name in names:
+                    gh = name_to_gh.get(name.lower())
+                    if gh:
+                        break
             key = (gh or email.split("@")[0]).lower()
 
             # Best name: GitHub API name > longest git name
