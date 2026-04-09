@@ -1042,7 +1042,7 @@ def _run_upgrade() -> None:
         if new_version and new_version != VERSION:
             print(f"  Upgraded: {VERSION} → {new_version}\n")
         else:
-            print("  Already up to date.\n")
+            print(f"  Reinstalled {new_version or VERSION} (latest).\n")
     except subprocess.CalledProcessError as e:
         print(f"  Upgrade failed: {e}", file=sys.stderr)
         sys.exit(1)
