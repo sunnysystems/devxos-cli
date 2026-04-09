@@ -598,7 +598,7 @@ def _run_single_repo(args: argparse.Namespace) -> None:
 
         # Resolve remaining emails via GitHub repo API
         from devxos.ingestion.github_reader import detect_github_remote
-        nwo = detect_github_remote(repo_path)
+        nwo = detect_github_remote(repo)
         if nwo:
             unresolved = {e for e in email_to_names if e not in email_gh_cache}
             if unresolved:
