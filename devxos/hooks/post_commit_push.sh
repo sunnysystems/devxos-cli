@@ -46,8 +46,7 @@ fi
 # Run in background so we don't block the commit
 (
     mkdir -p "$DEVXOS_DIR"
-    "$DEVXOS_BIN" "$REPO_ROOT" --push --quiet 2>/dev/null
-    echo "$TODAY" > "$STAMP_FILE"
+    "$DEVXOS_BIN" "$REPO_ROOT" --push --quiet 2>/dev/null && echo "$TODAY" > "$STAMP_FILE"
 ) &
 
 exit 0
