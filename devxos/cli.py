@@ -560,40 +560,46 @@ def _run_single_repo(args: argparse.Namespace) -> None:
                 pass
             return None
 
-        def _gh_username_by_email(email: str) -> str | None:
-            """Search GitHub username by commit email via gh API."""
-            try:
-                r = subprocess.run(
-                    ["gh", "api", f"search/commits?q=author-email:{email}&per_page=1",
-                     "-q", ".items[0].author.login"],
-                    capture_output=True, text=True, timeout=10,
-                )
-                if r.returncode == 0 and r.stdout.strip():
-                    return r.stdout.strip()
-            except (FileNotFoundError, subprocess.TimeoutExpired):
-                pass
-            return None
+        def _resolve_emails_via_repo(nwo: str, emails: set[str]) -> dict[str, str]:
+            """Resolve emails to GitHub logins using the repo's commit API."""
+            result: dict[str, str] = {}
+            for email in emails:
+                try:
+                    r = subprocess.run(
+                        ["gh", "api", f"repos/{nwo}/commits?author={email}&per_page=1",
+                         "-q", ".[0].author.login"],
+                        capture_output=True, text=True, timeout=10,
+                    )
+                    if r.returncode == 0 and r.stdout.strip():
+                        result[email] = r.stdout.strip()
+                except (FileNotFoundError, subprocess.TimeoutExpired):
+                    pass
+            return result
 
         # Step 1: Collect all unique emails and resolve GitHub usernames
         email_to_names: dict[str, set[str]] = {}
         gh_usernames: set[str] = set()
-
-        email_gh_cache: dict[str, str | None] = {}  # email → github username
+        email_gh_cache: dict[str, str] = {}  # email → github username
 
         for c in commits:
             email = (c.author_email or "").lower()
             if email:
                 email_to_names.setdefault(email, set()).add(c.author)
                 gh = _gh_username(email)
-                if not gh and email not in email_gh_cache:
-                    # Fallback: search GitHub by email
-                    gh = _gh_username_by_email(email)
-                    email_gh_cache[email] = gh
-                elif not gh:
-                    gh = email_gh_cache.get(email)
                 if gh:
                     gh_usernames.add(gh)
                     email_gh_cache[email] = gh
+
+        # Resolve remaining emails via GitHub repo API
+        from devxos.ingestion.github_reader import detect_github_remote
+        nwo = detect_github_remote(repo_path)
+        if nwo:
+            unresolved = {e for e in email_to_names if e not in email_gh_cache}
+            if unresolved:
+                repo_resolved = _resolve_emails_via_repo(nwo, unresolved)
+                for email, login in repo_resolved.items():
+                    email_gh_cache[email] = login
+                    gh_usernames.add(login)
 
         # Step 2: Resolve GitHub usernames to real names
         gh_name_cache: dict[str, str] = {}
@@ -602,27 +608,11 @@ def _run_single_repo(args: argparse.Namespace) -> None:
             if real_name:
                 gh_name_cache[username.lower()] = real_name
 
-        # Step 2b: Map author names to GitHub usernames
-        # An author with multiple emails (corporate + noreply) should
-        # inherit the GitHub username from whichever email resolved it.
-        name_to_gh: dict[str, str] = {}
-        for email, names in email_to_names.items():
-            gh = _gh_username(email) or email_gh_cache.get(email)
-            if gh:
-                for name in names:
-                    name_to_gh[name.lower()] = gh
-
         # Step 3: Build identity map — group by GitHub username or email local
         identity_names: dict[str, str] = {}  # key → best name
         identity_github: dict[str, str | None] = {}  # key → github username
         for email, names in email_to_names.items():
-            gh = _gh_username(email) or email_gh_cache.get(email)
-            # Fallback: check if any name from this email has a known gh username
-            if not gh:
-                for name in names:
-                    gh = name_to_gh.get(name.lower())
-                    if gh:
-                        break
+            gh = email_gh_cache.get(email)
             key = (gh or email.split("@")[0]).lower()
 
             # Best name: GitHub API name > longest git name
