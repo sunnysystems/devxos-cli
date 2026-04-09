@@ -1009,6 +1009,9 @@ def _run_upgrade() -> None:
 def main(argv: list[str] | None = None) -> None:
     # Intercept subcommands before argparse (they use different arg structures)
     raw_argv = argv if argv is not None else sys.argv[1:]
+    if raw_argv and raw_argv[0] in ("--version", "-V"):
+        print(f"DevXOS {VERSION}")
+        return
     if raw_argv and raw_argv[0] == "upgrade":
         _run_upgrade()
         return
