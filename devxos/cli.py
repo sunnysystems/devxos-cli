@@ -237,6 +237,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=False,
         help="Skip auto-push even if logged in (write to filesystem only)",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        default=False,
+        help="Show detailed debug output (e.g. author → GitHub login mapping)",
+    )
     return parser.parse_args(argv)
 
 
@@ -644,6 +650,13 @@ def _run_single_repo(args: argparse.Namespace) -> None:
                 entry["github"] = gh_user
             active_users_list.append(entry)
         active_users = active_users_list
+        if args.verbose:
+            print("\n[verbose] Active Contributors → GitHub mapping:")
+            for u in active_users:
+                gh = u.get("github")
+                status = f"→ {gh}" if gh else "  (no GitHub login)"
+                print(f"  {u['name']:<30} {status}")
+            print()
         with span("push", {"repo": repo_name}):
             _push_after_analysis(metrics_path, repo_name, args.days, active_users=active_users)
         record_counter("devxos.push.success", 1, {"repo": repo_name})
