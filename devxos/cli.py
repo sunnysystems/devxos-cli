@@ -15,7 +15,7 @@ from devxos.models.context import AnalysisContext
 from devxos.reports.narrative import generate_narrative
 from devxos.reports.writer import write_output
 
-VERSION = "v1.0"
+VERSION = "v1.1"
 
 
 def _merge_durability(metrics, durability):
@@ -828,7 +828,7 @@ def _push_after_analysis(
 
 def _run_hook(argv: list[str]) -> None:
     """Handle `devxos hook install|uninstall|status` subcommands."""
-    from devxos.hooks.manager import install, uninstall, status
+    from devxos.hooks.manager import install, install_push_hook, uninstall, uninstall_push_hook, status
 
     if not argv:
         print("Usage: devxos hook <install|uninstall|status> [repo_path]", file=sys.stderr)
@@ -847,12 +847,20 @@ def _run_hook(argv: list[str]) -> None:
         except FileNotFoundError as e:
             print(str(e), file=sys.stderr)
             sys.exit(1)
+        # Always install push hook alongside the main hook
+        try:
+            install_push_hook(repo_path)
+            print("Auto-push hook installed (daily report on first commit).")
+        except FileExistsError:
+            pass
 
     elif action == "uninstall":
-        if uninstall(repo_path):
-            print("DevXOS post-commit hook removed.")
+        removed = uninstall(repo_path)
+        removed_push = uninstall_push_hook(repo_path)
+        if removed or removed_push:
+            print("DevXOS hooks removed.")
         else:
-            print("DevXOS hook is not installed.")
+            print("DevXOS hooks are not installed.")
 
     elif action == "status":
         info = status(repo_path)
@@ -983,12 +991,16 @@ def _run_upgrade() -> None:
             sys.exit(1)
 
         # Show new version
+        python_bin = os.path.join(install_dir, "venv", "bin", "python") if not is_pipx else "python"
         result = subprocess.run(
-            [os.path.join(install_dir, "venv", "bin", "devxos") if not is_pipx else "devxos",
-             ".", "--help"],
+            [python_bin, "-c", "from devxos.cli import VERSION; print(VERSION)"],
             capture_output=True, text=True,
         )
-        print("  Upgrade complete.\n")
+        new_version = result.stdout.strip() if result.returncode == 0 else None
+        if new_version and new_version != VERSION:
+            print(f"  Upgraded: {VERSION} → {new_version}\n")
+        else:
+            print("  Already up to date.\n")
     except subprocess.CalledProcessError as e:
         print(f"  Upgrade failed: {e}", file=sys.stderr)
         sys.exit(1)
