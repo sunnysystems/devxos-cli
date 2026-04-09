@@ -15,7 +15,7 @@ from devxos.models.context import AnalysisContext
 from devxos.reports.narrative import generate_narrative
 from devxos.reports.writer import write_output
 
-VERSION = "v1.1"
+VERSION = "v1.1.1"
 
 
 def _merge_durability(metrics, durability):
@@ -1024,7 +1024,7 @@ def _run_upgrade() -> None:
             subprocess.run(["pipx", "upgrade", "devxos"], check=True)
         elif os.path.isfile(venv_pip):
             subprocess.run(
-                [venv_pip, "install", "--quiet", "--upgrade", repo_url],
+                [venv_pip, "install", "--quiet", "--force-reinstall", repo_url],
                 check=True,
             )
         else:
